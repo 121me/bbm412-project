@@ -203,7 +203,8 @@
 		// BLOCK OF CODES TO PASS PIXEL SHADER
 		composer = new EffectComposer( renderer );
 		composer.outputEncoding = THREE.sRGBEncoding;
-		composer.addPass( new RenderPass( scene, activeCamera ) );
+		composer.addPass( new RenderPass( scene, cameraForDrone ) );
+		composer.removePass()
 
 		pixelPass = new ShaderPass( PixelShader );
 		pixelPass.uniforms[ 'resolution' ].value = new THREE.Vector2( window.innerWidth, window.innerHeight );
@@ -282,13 +283,18 @@
 
 	//
 
+	function update() {
+
+		controlsForTrailer.update();
+		controlsForDrone.update( clock.getDelta() );
+
+	}
+
 	function animate() {
 
 		// COMMENT COMPOSER.RENDER() FOR DEFAULT VIEW, COMMENT RENDER FOR PIXEL VIEW
 
 		render();
-
-		//composer.render();
 
 		stats.update();
 
@@ -301,12 +307,12 @@
 		cameraForTrailer.updateProjectionMatrix();
 		cameraForDrone.updateProjectionMatrix();
 
-		controlsForTrailer.update();
-		controlsForDrone.update( clock.getDelta() );
+		update();
 
-		renderer.clear();
+		composer.render( clock.getDelta() );
 
-		renderer.render( scene, activeCamera );
+		//renderer.clear();
+		//renderer.render( scene, activeCamera );
 
 	}
 
