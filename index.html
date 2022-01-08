@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-<base href=".">
 <head>
 	<title>project x</title>
 	<meta charset="utf-8">
@@ -21,20 +20,40 @@
 
 <script type="module">
 
+	// Main three.js library, it's magic !!!
 	import * as THREE from './js/three.module.js';
 
+	// a library for FPS Stats and some other, IDK
 	import Stats from './js/stats.module.js';
 
+	// libraries for camera controls of course
 	import { OrbitControls } from './js/OrbitControls.js';
 	import { FirstPersonControls } from './js/FirstPersonControls.js';
 
+	// libraries to load the materials and meshes
+	import { MTLLoader } from './js/MTLLoader.js';
+	import { OBJLoader } from './js/OBJLoader.js';
+	import { TGALoader } from './js/TGALoader.js';
+
+	// libraries to pass shaders
+	import { EffectComposer } from './js/EffectComposer.js';
+	import { RenderPass } from './js/RenderPass.js';
+	import { ShaderPass } from './js/ShaderPass.js';
+	import { PixelShader } from './js/PixelShader.js';
+
 	// import { GUI } from '../examples/jsm/libs/lil-gui.module.min.js'; #TODO add later
 
-	let scene, renderer, stats; // camera?
+	let scene, renderer, stats, composer; // camera?
 	let cameraRig, activeCamera;
 	let cameraForTrailer, cameraForDrone;
 
+	let pixelPass;
+
 	const clock = new THREE.Clock();
+
+	const manager = new THREE.LoadingManager();
+	// manager.addHandler( /\.dds$/i, new DDSLoader() );
+	manager.addHandler( /\.tga$/i, new TGALoader() );
 
 	let controlsForDrone;
 	let controlsForTrailer;
@@ -103,11 +122,11 @@
 		cameraRig.add( cameraForDrone );
 		*/
 
-		scene.add( new THREE.AmbientLight( 0xffffff, 0.0 ) );
+		scene.add( new THREE.AmbientLight( 0xffffff, 0.5 ) );
 
-		const dirLight = new THREE.DirectionalLight( 0xffffff, 1.0 );
-		dirLight.position.set( 10, 10, 10 ).normalize();
-		dirLight.rotation.set( 0.5, 0.5, 0.5 );
+		const dirLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
+		dirLight.position.set( 0, 10, 0 ).normalize();
+		dirLight.rotation.set( 1, 0, 0 );
 
 		/*
 		dirLight.castShadow = true;
@@ -151,16 +170,20 @@
 
 		//const gui = new GUI(); # TODO add later
 
+		// MAIN RENDERER
 		renderer = new THREE.WebGLRenderer( { antialias: true } );
 		renderer.setPixelRatio( window.devicePixelRatio );
 		renderer.setSize( window.innerWidth, window.innerHeight );
+		renderer.outputEncoding = THREE.sRGBEncoding;
 		document.body.appendChild( renderer.domElement );
 
+		// CAMERA 1
 		controlsForTrailer = new OrbitControls( cameraForTrailer, renderer.domElement );
 		controlsForTrailer.target.set( 0, 1, 0 );
 		controlsForTrailer.enablePan = false;
 		controlsForTrailer.update();
 
+		// CAMERA 2
 		controlsForDrone = new FirstPersonControls( cameraForDrone, renderer.domElement );
 		controlsForDrone.lookAt( 0, 0, 0 );
 
@@ -171,11 +194,55 @@
 		controlsForDrone.enabled = false;
 		controlsForTrailer.enabled = true;
 
+		// FUNCTION TO LOAD A SINGLE ROCK
+		myObjLoader();
+
 		stats = new Stats();
 		document.body.appendChild( stats.dom );
 
+		// BLOCK OF CODES TO PASS PIXEL SHADER
+		composer = new EffectComposer( renderer );
+		composer.outputEncoding = THREE.sRGBEncoding;
+		composer.addPass( new RenderPass( scene, activeCamera ) );
+
+		pixelPass = new ShaderPass( PixelShader );
+		pixelPass.uniforms[ 'resolution' ].value = new THREE.Vector2( window.innerWidth, window.innerHeight );
+		pixelPass.uniforms[ 'resolution' ].value.multiplyScalar( window.devicePixelRatio );
+
+		// TODO JUST PLAY WITH THIS VALUE TO CHANGE THE PIXEL SIZE
+		pixelPass.uniforms[ 'pixelSize' ].value = 4;
+		composer.addPass( pixelPass );
+
 		window.addEventListener( 'resize', onWindowResize );
 		document.addEventListener( 'keydown', onKeyDown );
+
+	}
+
+	const onProgress = function () {};
+
+	const onError = function () {};
+
+	// FUNCTION TO LOAD A SINGLE ROCK
+	function myObjLoader() {
+
+		new MTLLoader( manager )
+			.setPath( './resources/' )
+			.load( 'RockHigh2.mtl', function ( materials ) {
+
+				materials.preload();
+
+				new OBJLoader( manager )
+					.setMaterials( materials )
+					.setPath( './resources/' )
+					.load( 'RockHigh2.obj', function ( object ) {
+
+						object.scale.set( 1, 1, 1 );
+						object.position.set( 0, 2, 0 );
+						scene.add( object );
+
+					}, onProgress, onError );
+
+			} );
 
 	}
 
@@ -209,17 +276,23 @@
 
 		renderer.setSize( window.innerWidth, window.innerHeight );
 
+		pixelPass.uniforms[ 'resolution' ].value.set( window.innerWidth, window.innerHeight ).multiplyScalar( window.devicePixelRatio );
+
 	}
 
 	//
 
 	function animate() {
 
-		requestAnimationFrame( animate );
+		// COMMENT COMPOSER.RENDER() FOR DEFAULT VIEW, COMMENT RENDER FOR PIXEL VIEW
 
 		render();
 
+		//composer.render();
+
 		stats.update();
+
+		requestAnimationFrame( animate );
 
 	}
 
