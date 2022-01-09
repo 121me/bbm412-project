@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>project x</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="index.css">
+	<style>
+		body {
+			background-color: #fff;
+			color: #000;
+		}
+		a {
+			color: #08f;
+		}
+	</style>
+</head>
+<body>
+<div id="info">'1' trailer camera with mouse - '2' drone camera with mouse and WASD</div>
+
+<script type="module">
+
+	// Main three.js library, it's magic !!!
+	import * as THREE from './js/three.module.js';
+
+	// a library for FPS Stats and some other, IDK
+	import Stats from './js/stats.module.js';
+
+	// libraries for camera controls of course
+	import { OrbitControls } from './js/OrbitControls.js';
+	import { FirstPersonControls } from './js/FirstPersonControls.js';
+
+	// libraries to load the materials and meshes
+	import { MTLLoader } from './js/MTLLoader.js';
+	import { OBJLoader } from './js/OBJLoader.js';
+	import { TGALoader } from './js/TGALoader.js';
+
+	// libraries to pass shaders
+	import { EffectComposer } from './js/EffectComposer.js';
+	import { RenderPass } from './js/RenderPass.js';
+	import { ShaderPass } from './js/ShaderPass.js';
+	import { PixelShader } from './js/PixelShader.js';
+	import { GammaCorrectionShader } from "./js/GammaCorrectionShader.js";
+
+	// import { GUI } from '../examples/jsm/libs/lil-gui.module.min.js'; #TODO add later
+
+	let scene, renderer, stats, composer; // camera?
+	let cameraRig, activeCamera;
+	let cameraForTrailer, cameraForDrone;
+
+	let pixelPass, gammaCorrectionPass;
+
+	const clock = new THREE.Clock();
+
+	const manager = new THREE.LoadingManager();
+	// manager.addHandler( /\.dds$/i, new DDSLoader() );
+	manager.addHandler( /\.tga$/i, new TGALoader() );
+
+	let controlsForDrone;
+	let controlsForTrailer;
+
+	// const mouse = new THREE.Vector2();
+	// let INTERSECTED;
+
+	const amount = 30;
+	// const count = Math.pow( amount, 2 );
+
+	const randomDirtColor = [
+		0xff0000,
+
+		0xff5000,
+
+		0xffa000,
+
+		0xffff00,
+		0xffff00,
+		0xffff00,
+
+		0xa0ff00,
+		0xa0ff00,
+		0xa0ff00,
+
+		0x50ff00,
+		0x50ff00,
+		0x50ff00,
+
+		0x00ff00,
+		0x00ff00,
+		0x00ff00,
+		0x00ff00,
+		0x00ff00
+	];
+
+	init();
+	animate();
+
+	function init() {
+
+		scene = new THREE.Scene();
+		scene.background = new THREE.Color( 0x80c0e0 );
+
+		const sizeOfSoil = 1;
+
+		// cameraForTrailer
+		cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 200 );
+		cameraForTrailer.position.set( amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil );
+		cameraForTrailer.lookAt( 0, 0, 0 );
+		scene.add( cameraForTrailer );
+
+		// cameraForDrone
+		cameraForDrone = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 200 );
+		cameraForDrone.position.set( 0, amount * 0.9 * sizeOfSoil, 0 );
+		cameraForDrone.lookAt( 0, 0, 0 );
+		scene.add( cameraForDrone );
+
+		activeCamera = cameraForTrailer;
+
+
+		/*
+		cameraRig = new THREE.Group();
+
+		cameraRig.add( cameraForTrailer );
+		cameraRig.add( cameraForDrone );
+		*/
+
+		scene.add( new THREE.AmbientLight( 0xffffff, 0.5 ) );
+
+		const dirLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
+		dirLight.position.set( 0, 10, 0 ).normalize();
+		dirLight.rotation.set( 1, 0, 0 );
+
+		/*
+		dirLight.castShadow = true;
+		dirLight.shadow.camera.near = 1;
+		dirLight.shadow.camera.far = 1000;
+
+		dirLight.shadow.camera.right = 1;
+		dirLight.shadow.camera.left = - 1;
+		dirLight.shadow.camera.top	= 1;
+		dirLight.shadow.camera.bottom = - 1;
+
+		dirLight.shadow.mapSize.width = 1024;
+		dirLight.shadow.mapSize.height = 1024;
+		*/
+
+		scene.add( dirLight );
+
+		const axesHelper = new THREE.AxesHelper( 10 );
+		scene.add( axesHelper );
+
+		const geometry = new THREE.BoxGeometry( sizeOfSoil, 1, sizeOfSoil );
+
+		const offset = ( amount - 1 ) / 2;
+
+		for ( let x = 0; x < amount; x ++ ) {
+
+			for ( let z = 0; z < amount; z ++ ) {
+
+				const object = new THREE.Mesh( geometry,
+					new THREE.MeshPhongMaterial( {
+						color: randomDirtColor[ Math.floor( Math.random() * randomDirtColor.length ) ]
+					} ) );
+
+				object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
+
+				scene.add( object );
+
+			}
+
+		}
+
+		//const gui = new GUI(); # TODO add later
+
+		// MAIN RENDERER
+		renderer = new THREE.WebGLRenderer( { antialias: true } );
+		console.log(renderer.renderLists);
+		renderer.setPixelRatio( window.devicePixelRatio );
+		renderer.setSize( window.innerWidth, window.innerHeight );
+		renderer.outputEncoding = THREE.sRGBEncoding;
+		document.body.appendChild( renderer.domElement );
+
+		// CAMERA 1
+		controlsForTrailer = new OrbitControls( cameraForTrailer, renderer.domElement );
+		controlsForTrailer.target.set( 0, 1, 0 );
+		controlsForTrailer.enablePan = false;
+		controlsForTrailer.update();
+
+		// CAMERA 2
+		controlsForDrone = new FirstPersonControls( cameraForDrone, renderer.domElement );
+		controlsForDrone.lookAt( 0, 0, 0 );
+
+		controlsForDrone.movementSpeed = 50;
+		controlsForDrone.lookSpeed = 0.125;
+		controlsForDrone.lookVertical = true;
+
+		controlsForDrone.enabled = false;
+		controlsForTrailer.enabled = true;
+
+		// FUNCTION TO LOAD A SINGLE ROCK
+		myObjLoader();
+
+		stats = new Stats();
+		document.body.appendChild( stats.dom );
+
+		// BLOCK OF CODES TO PASS PIXEL SHADER
+		composer = new EffectComposer( renderer );
+		console.log(composer);
+		composer.addPass( new RenderPass( scene, cameraForTrailer ) );
+
+		pixelPass = new ShaderPass( PixelShader );
+		pixelPass.uniforms[ 'resolution' ].value = new THREE.Vector2( window.innerWidth, window.innerHeight );
+		pixelPass.uniforms[ 'resolution' ].value.multiplyScalar( window.devicePixelRatio );
+
+		// TODO JUST PLAY WITH THIS VALUE TO CHANGE THE PIXEL SIZE
+		pixelPass.uniforms[ 'pixelSize' ].value = 4;
+		composer.addPass( pixelPass );
+
+		const gammaCorrectionPass = new ShaderPass( GammaCorrectionShader );
+		composer.addPass( gammaCorrectionPass );
+
+		window.addEventListener( 'resize', onWindowResize );
+		document.addEventListener( 'keydown', onKeyDown );
+
+	}
+
+	const onProgress = function () {};
+
+	const onError = function () {};
+
+	// FUNCTION TO LOAD A SINGLE ROCK
+	function myObjLoader() {
+
+		new MTLLoader( manager )
+			.setPath( './resources/' )
+			.load( 'RockHigh2.mtl', function ( materials ) {
+
+				materials.preload();
+
+				new OBJLoader( manager )
+					.setMaterials( materials )
+					.setPath( './resources/' )
+					.load( 'RockHigh2.obj', function ( object ) {
+
+						object.scale.set( 1, 1, 1 );
+						object.position.set( 0, 2, 0 );
+						scene.add( object );
+
+					}, onProgress, onError );
+
+			} );
+
+	}
+
+	function onKeyDown( event ) {
+
+		switch ( event.keyCode ) {
+
+			case 49: // 1
+				activeCamera = cameraForTrailer;
+				controlsForDrone.enabled = false;
+				controlsForTrailer.enabled = true;
+				break;
+
+			case 50: // 2
+				activeCamera = cameraForDrone;
+				controlsForTrailer.enabled = false;
+				controlsForDrone.enabled = true;
+				break;
+
+		}
+
+	}
+
+	function onWindowResize() {
+
+		cameraForTrailer.aspect = window.innerWidth / window.innerHeight;
+		cameraForTrailer.updateProjectionMatrix();
+
+		cameraForDrone.aspect = window.innerWidth / window.innerHeight;
+		cameraForDrone.updateProjectionMatrix();
+
+		renderer.setSize( window.innerWidth, window.innerHeight );
+
+		pixelPass.uniforms[ 'resolution' ].value.set( window.innerWidth, window.innerHeight ).multiplyScalar( window.devicePixelRatio );
+
+	}
+
+	//
+
+	function update() {
+
+		controlsForTrailer.update();
+		controlsForDrone.update( clock.getDelta() );
+
+	}
+
+	function animate() {
+
+		// COMMENT COMPOSER.RENDER() FOR DEFAULT VIEW, COMMENT RENDER FOR PIXEL VIEW
+
+		render();
+
+		stats.update();
+
+		requestAnimationFrame( animate );
+
+	}
+
+	function render() {
+
+		cameraForTrailer.updateProjectionMatrix();
+		cameraForDrone.updateProjectionMatrix();
+
+		update();
+
+		composer.render( clock.getDelta() );
+
+		//renderer.clear();
+		//renderer.render( scene, activeCamera );
+
+	}
+
+</script>
+
+</body>
+</html>
