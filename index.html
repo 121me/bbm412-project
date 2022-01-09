@@ -24,6 +24,9 @@
     // Main three.js library, it's magic !!!
     import * as THREE from './js/three.module.js';
 
+    // Tween.js for animations
+    import { TWEEN } from "./js/tween.module.min.js";
+
     // a library for FPS Stats and some other, IDK
     import Stats from './js/stats.module.js';
 
@@ -46,10 +49,12 @@
     // import { GUI } from '../examples/jsm/libs/lil-gui.module.min.js'; #TODO add later
 
     let scene, renderer, stats, composerPixelShaderTrailer, composerPixelShaderDrone; // camera?
-    let cameraRig, activeCamera;
+    let cameraRig;
     let cameraForTrailer, cameraForDrone;
 
     let pixelPass, gammaCorrectionPass;
+
+    let stone;
 
     const clock = new THREE.Clock();
 
@@ -74,6 +79,9 @@
     // let INTERSECTED;
 
     const amount = 30;
+    const sizeOfSoil = 1;
+    const offset = ( amount - 1 ) / 2;
+
     // const count = Math.pow( amount, 2 );
 
     const randomDirtColor = [
@@ -102,30 +110,22 @@
         0x00ff00
     ];
 
-    init();
-    animate();
-
     function init() {
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color( 0x80c0e0 );
 
-        const sizeOfSoil = 1;
-
         // cameraForTrailer
         cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 200 );
         cameraForTrailer.position.set( amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil );
         cameraForTrailer.lookAt( 0, 0, 0 );
-        scene.add( cameraForTrailer );
+        // scene.add( cameraForTrailer );
 
         // cameraForDrone
         cameraForDrone = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 200 );
         cameraForDrone.position.set( 0, amount * 0.9 * sizeOfSoil, 0 );
         cameraForDrone.lookAt( 0, 0, 0 );
-        scene.add( cameraForDrone );
-
-        activeCamera = cameraForTrailer;
-
+        // scene.add( cameraForDrone );
 
         /*
         cameraRig = new THREE.Group();
@@ -159,20 +159,30 @@
         const axesHelper = new THREE.AxesHelper( 10 );
         scene.add( axesHelper );
 
-        const geometry = new THREE.BoxGeometry( sizeOfSoil, 1, sizeOfSoil );
+        const stoneDumbGeometry = new THREE.BoxGeometry( 2, 2, 2 );
+        const stoneDumbMaterial = new THREE.MeshStandardMaterial( { color: 0x000000 } );
+        const stoneMesh = new THREE.Mesh( stoneDumbGeometry, stoneDumbMaterial );
+        stone = stoneMesh;
+        scene.add( stoneMesh );
 
-        const offset = ( amount - 1 ) / 2;
+        const planeGeometry = new THREE.PlaneGeometry( sizeOfSoil, sizeOfSoil );
+        const boxGeometry = new THREE.BoxGeometry( sizeOfSoil * amount, 1, sizeOfSoil * amount);
+
+        const lowerGroundObject = new THREE.Mesh( boxGeometry, new THREE.MeshPhongMaterial( { color: 0x904000} ) );
+        lowerGroundObject.position.y = -0.6;
+        scene.add( lowerGroundObject );
 
         for ( let x = 0; x < amount; x ++ ) {
 
             for ( let z = 0; z < amount; z ++ ) {
 
-                const object = new THREE.Mesh( geometry,
+                const object = new THREE.Mesh( planeGeometry,
                     new THREE.MeshPhongMaterial( {
                         color: randomDirtColor[ Math.floor( Math.random() * randomDirtColor.length ) ]
                     } ) );
 
                 object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
+                object.rotation.x = Math.PI * 1.5;
 
                 scene.add( object );
 
@@ -200,14 +210,14 @@
         controlsForDrone = new FirstPersonControls( cameraForDrone, renderer.domElement );
         controlsForDrone.lookAt( 0, 0, 0 );
 
-        controlsForDrone.movementSpeed = 50;
-        controlsForDrone.lookSpeed = 0.125;
+        controlsForDrone.movementSpeed = 10;
+        controlsForDrone.lookSpeed = 0.05;
         controlsForDrone.lookVertical = true;
 
         controlsForDrone.enabled = false;
         controlsForTrailer.enabled = true;
 
-        // FUNCTION TO LOAD A SINGLE ROCK
+        // FUNCTION TO LOAD A SINGLE STONE
         myObjLoader();
 
         stats = new Stats();
@@ -233,6 +243,9 @@
         composerPixelShaderTrailer.addPass( gammaCorrectionPass );
         composerPixelShaderDrone.addPass( gammaCorrectionPass );
 
+        scene.add( cameraForTrailer );
+        scene.add( cameraForDrone );
+
         window.addEventListener( 'resize', onWindowResize );
         document.addEventListener( 'keydown', onKeyDown );
 
@@ -242,7 +255,7 @@
 
     const onError = function () {};
 
-    // FUNCTION TO LOAD A SINGLE ROCK
+    // FUNCTION TO LOAD A SINGLE STONE
     function myObjLoader() {
 
         new MTLLoader( manager )
@@ -258,12 +271,11 @@
 
                         object.scale.set( 1, 1, 1 );
                         object.position.set( 0, 2, 0 );
+                        stone = object;
                         scene.add( object );
 
                     }, onProgress, onError );
-
             } );
-
     }
 
     function onKeyDown( event ) {
@@ -271,15 +283,15 @@
         switch ( event.keyCode ) {
 
             case 49: // 1 Trailer Camera
-                activeCamera = cameraForTrailer;
                 controlsForDrone.enabled = false;
+                controlsForDrone.lookSpeed = 0.0;
                 controlsForTrailer.enabled = true;
                 cameraMode = 0;
                 break;
 
             case 50: // 2 Drone Camera
-                activeCamera = cameraForDrone;
                 controlsForTrailer.enabled = false;
+                controlsForDrone.lookSpeed = 0.05;
                 controlsForDrone.enabled = true;
                 cameraMode = 1;
                 break;
@@ -287,6 +299,7 @@
             case 76: // L shader
                 renderMode = (renderMode + 1) % 2;
                 break;
+
         }
 
     }
@@ -308,23 +321,39 @@
     //
 
     function update() {
-        cameraForTrailer.updateProjectionMatrix();
-        cameraForDrone.updateProjectionMatrix();
 
-        controlsForTrailer.update();
-        controlsForDrone.update( clock.getDelta() );
+        if (cameraMode === 0) {
 
+            cameraForTrailer.updateProjectionMatrix();
+            controlsForTrailer.update();
+
+        } else if (cameraMode === 1) {
+
+            cameraForDrone.updateProjectionMatrix();
+            controlsForDrone.update( clock.getDelta() );
+
+        }
+
+        TWEEN.update();
+
+        stats.update();
+
+    }
+
+    function tween( stone ) {
+        new TWEEN.Tween( stone.position ).to( {
+            x: ( offset - Math.random() * amount ) * sizeOfSoil,
+            y: 2,
+            z: ( offset - Math.random() * amount ) * sizeOfSoil
+        }, Math.random() * 1000 + 1000 )
+            .easing( TWEEN.Easing.Quadratic.Out ).start();
     }
 
     function animate() {
 
-        // COMMENT COMPOSER.RENDER() FOR DEFAULT VIEW, COMMENT RENDER FOR PIXEL VIEW
+        tween( stone );
 
-        render();
-
-        stats.update();
-
-        requestAnimationFrame( animate );
+        setTimeout( animate, 2000 );
 
     }
 
@@ -334,16 +363,23 @@
 
         if ( renderMode === 0 ) {
 
-            renderer.clear();
-            renderer.render( scene, activeCamera );
+            if ( cameraMode === 0 ) {
+
+                renderer.render(scene, cameraForTrailer);
+
+            } else if ( cameraMode === 1 ) {
+
+                renderer.render(scene, cameraForDrone);
+
+            }
 
         } else if ( renderMode === 1 ) {
 
-            if (cameraMode === 0) {
+            if ( cameraMode === 0 ) {
 
                 composerPixelShaderTrailer.render( clock.getDelta() );
 
-            } else if (cameraMode === 1) {
+            } else if ( cameraMode === 1 ) {
 
                 composerPixelShaderDrone.render( clock.getDelta() );
 
@@ -351,7 +387,13 @@
 
         }
 
+        requestAnimationFrame( render );
+
     }
+
+    init();
+    animate();
+    render();
 
 </script>
 
