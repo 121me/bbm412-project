@@ -1,320 +1,357 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>project x</title>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-	<link type="text/css" rel="stylesheet" href="index.css">
-	<style>
-		body {
-			background-color: #fff;
-			color: #000;
-		}
-		a {
-			color: #08f;
-		}
-	</style>
+    <title>project x</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="index.css">
+    <style>
+        body {
+            background-color: #fff;
+            color: #000;
+        }
+        a {
+            color: #08f;
+        }
+    </style>
 </head>
 <body>
-<div id="info">'1' trailer camera with mouse - '2' drone camera with mouse and WASD</div>
+<div id="info">'1' trailer camera with mouse - '2' drone camera with mouse and WASD
+<br>'L' to change shader (default/pixel)</div>
 
 <script type="module">
 
-	// Main three.js library, it's magic !!!
-	import * as THREE from './js/three.module.js';
+    // Main three.js library, it's magic !!!
+    import * as THREE from './js/three.module.js';
 
-	// a library for FPS Stats and some other, IDK
-	import Stats from './js/stats.module.js';
+    // a library for FPS Stats and some other, IDK
+    import Stats from './js/stats.module.js';
 
-	// libraries for camera controls of course
-	import { OrbitControls } from './js/OrbitControls.js';
-	import { FirstPersonControls } from './js/FirstPersonControls.js';
+    // libraries for camera controls of course
+    import { OrbitControls } from './js/OrbitControls.js';
+    import { FirstPersonControls } from './js/FirstPersonControls.js';
 
-	// libraries to load the materials and meshes
-	import { MTLLoader } from './js/MTLLoader.js';
-	import { OBJLoader } from './js/OBJLoader.js';
-	import { TGALoader } from './js/TGALoader.js';
+    // libraries to load the materials and meshes
+    import { MTLLoader } from './js/MTLLoader.js';
+    import { OBJLoader } from './js/OBJLoader.js';
+    import { TGALoader } from './js/TGALoader.js';
 
-	// libraries to pass shaders
-	import { EffectComposer } from './js/EffectComposer.js';
-	import { RenderPass } from './js/RenderPass.js';
-	import { ShaderPass } from './js/ShaderPass.js';
-	import { PixelShader } from './js/PixelShader.js';
+    // libraries to pass shaders
+    import { EffectComposer } from './js/EffectComposer.js';
+    import { RenderPass } from './js/RenderPass.js';
+    import { ShaderPass } from './js/ShaderPass.js';
+    import { PixelShader } from './js/PixelShader.js';
+    import { GammaCorrectionShader } from "./js/GammaCorrectionShader.js";
 
-	// import { GUI } from '../examples/jsm/libs/lil-gui.module.min.js'; #TODO add later
+    // import { GUI } from '../examples/jsm/libs/lil-gui.module.min.js'; #TODO add later
 
-	let scene, renderer, stats, composer; // camera?
-	let cameraRig, activeCamera;
-	let cameraForTrailer, cameraForDrone;
+    let scene, renderer, stats, composerPixelShaderTrailer, composerPixelShaderDrone; // camera?
+    let cameraRig, activeCamera;
+    let cameraForTrailer, cameraForDrone;
 
-	let pixelPass;
+    let pixelPass, gammaCorrectionPass;
 
-	const clock = new THREE.Clock();
+    const clock = new THREE.Clock();
 
-	const manager = new THREE.LoadingManager();
-	// manager.addHandler( /\.dds$/i, new DDSLoader() );
-	manager.addHandler( /\.tga$/i, new TGALoader() );
+    const manager = new THREE.LoadingManager();
+    // manager.addHandler( /\.dds$/i, new DDSLoader() );
+    manager.addHandler( /\.tga$/i, new TGALoader() );
 
-	let controlsForDrone;
-	let controlsForTrailer;
+    let controlsForDrone;
+    let controlsForTrailer;
 
-	// const mouse = new THREE.Vector2();
-	// let INTERSECTED;
+    /* 0 default render
+     * 1 pixel render
+     */
+    let renderMode = 0;
 
-	const amount = 30;
-	// const count = Math.pow( amount, 2 );
+    /* 0 trailer camera
+     * 1 drone camera
+     */
+    let cameraMode = 0;
 
-	const randomDirtColor = [
-		0xff0000,
+    // const mouse = new THREE.Vector2();
+    // let INTERSECTED;
 
-		0xff5000,
+    const amount = 30;
+    // const count = Math.pow( amount, 2 );
 
-		0xffa000,
+    const randomDirtColor = [
+        0xff0000,
 
-		0xffff00,
-		0xffff00,
-		0xffff00,
+        0xff5000,
 
-		0xa0ff00,
-		0xa0ff00,
-		0xa0ff00,
+        0xffa000,
 
-		0x50ff00,
-		0x50ff00,
-		0x50ff00,
+        0xffff00,
+        0xffff00,
+        0xffff00,
 
-		0x00ff00,
-		0x00ff00,
-		0x00ff00,
-		0x00ff00,
-		0x00ff00
-	];
+        0xa0ff00,
+        0xa0ff00,
+        0xa0ff00,
 
-	init();
-	animate();
+        0x50ff00,
+        0x50ff00,
+        0x50ff00,
 
-	function init() {
+        0x00ff00,
+        0x00ff00,
+        0x00ff00,
+        0x00ff00,
+        0x00ff00
+    ];
 
-		scene = new THREE.Scene();
-		scene.background = new THREE.Color( 0x80c0e0 );
+    init();
+    animate();
 
-		const sizeOfSoil = 1;
+    function init() {
 
-		// cameraForTrailer
-		cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 200 );
-		cameraForTrailer.position.set( amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil );
-		cameraForTrailer.lookAt( 0, 0, 0 );
-		scene.add( cameraForTrailer );
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color( 0x80c0e0 );
 
-		// cameraForDrone
-		cameraForDrone = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 200 );
-		cameraForDrone.position.set( 0, amount * 0.9 * sizeOfSoil, 0 );
-		cameraForDrone.lookAt( 0, 0, 0 );
-		scene.add( cameraForDrone );
+        const sizeOfSoil = 1;
 
-		activeCamera = cameraForTrailer;
+        // cameraForTrailer
+        cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 200 );
+        cameraForTrailer.position.set( amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil, amount * 0.9 * sizeOfSoil );
+        cameraForTrailer.lookAt( 0, 0, 0 );
+        scene.add( cameraForTrailer );
 
+        // cameraForDrone
+        cameraForDrone = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 200 );
+        cameraForDrone.position.set( 0, amount * 0.9 * sizeOfSoil, 0 );
+        cameraForDrone.lookAt( 0, 0, 0 );
+        scene.add( cameraForDrone );
 
-		/*
-		cameraRig = new THREE.Group();
+        activeCamera = cameraForTrailer;
 
-		cameraRig.add( cameraForTrailer );
-		cameraRig.add( cameraForDrone );
-		*/
 
-		scene.add( new THREE.AmbientLight( 0xffffff, 0.5 ) );
+        /*
+        cameraRig = new THREE.Group();
 
-		const dirLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
-		dirLight.position.set( 0, 10, 0 ).normalize();
-		dirLight.rotation.set( 1, 0, 0 );
+        cameraRig.add( cameraForTrailer );
+        cameraRig.add( cameraForDrone );
+        */
 
-		/*
-		dirLight.castShadow = true;
-		dirLight.shadow.camera.near = 1;
-		dirLight.shadow.camera.far = 1000;
+        scene.add( new THREE.AmbientLight( 0xffffff, 0.5 ) );
 
-		dirLight.shadow.camera.right = 1;
-		dirLight.shadow.camera.left = - 1;
-		dirLight.shadow.camera.top	= 1;
-		dirLight.shadow.camera.bottom = - 1;
+        const dirLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
+        dirLight.position.set( 0, 10, 0 ).normalize();
+        dirLight.rotation.set( 1, 0, 0 );
 
-		dirLight.shadow.mapSize.width = 1024;
-		dirLight.shadow.mapSize.height = 1024;
-		*/
+        /*
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.near = 1;
+        dirLight.shadow.camera.far = 1000;
 
-		scene.add( dirLight );
+        dirLight.shadow.camera.right = 1;
+        dirLight.shadow.camera.left = - 1;
+        dirLight.shadow.camera.top	= 1;
+        dirLight.shadow.camera.bottom = - 1;
 
-		const axesHelper = new THREE.AxesHelper( 10 );
-		scene.add( axesHelper );
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        */
 
-		const geometry = new THREE.BoxGeometry( sizeOfSoil, 1, sizeOfSoil );
+        scene.add( dirLight );
 
-		const offset = ( amount - 1 ) / 2;
+        const axesHelper = new THREE.AxesHelper( 10 );
+        scene.add( axesHelper );
 
-		for ( let x = 0; x < amount; x ++ ) {
+        const geometry = new THREE.BoxGeometry( sizeOfSoil, 1, sizeOfSoil );
 
-			for ( let z = 0; z < amount; z ++ ) {
+        const offset = ( amount - 1 ) / 2;
 
-				const object = new THREE.Mesh( geometry,
-					new THREE.MeshStandardMaterial( {
-						color: randomDirtColor[ Math.floor( Math.random() * randomDirtColor.length ) ]
-					} ) );
+        for ( let x = 0; x < amount; x ++ ) {
 
-				object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
+            for ( let z = 0; z < amount; z ++ ) {
 
-				scene.add( object );
+                const object = new THREE.Mesh( geometry,
+                    new THREE.MeshPhongMaterial( {
+                        color: randomDirtColor[ Math.floor( Math.random() * randomDirtColor.length ) ]
+                    } ) );
 
-			}
+                object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
 
-		}
+                scene.add( object );
 
-		//const gui = new GUI(); # TODO add later
+            }
 
-		// MAIN RENDERER
-		renderer = new THREE.WebGLRenderer( { antialias: true } );
-		renderer.setPixelRatio( window.devicePixelRatio );
-		renderer.setSize( window.innerWidth, window.innerHeight );
-		renderer.outputEncoding = THREE.sRGBEncoding;
-		document.body.appendChild( renderer.domElement );
+        }
 
-		// CAMERA 1
-		controlsForTrailer = new OrbitControls( cameraForTrailer, renderer.domElement );
-		controlsForTrailer.target.set( 0, 1, 0 );
-		controlsForTrailer.enablePan = false;
-		controlsForTrailer.update();
+        //const gui = new GUI(); # TODO add later
 
-		// CAMERA 2
-		controlsForDrone = new FirstPersonControls( cameraForDrone, renderer.domElement );
-		controlsForDrone.lookAt( 0, 0, 0 );
+        // MAIN RENDERER
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        console.log(renderer.renderLists);
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        document.body.appendChild( renderer.domElement );
 
-		controlsForDrone.movementSpeed = 50;
-		controlsForDrone.lookSpeed = 0.125;
-		controlsForDrone.lookVertical = true;
+        // CAMERA 1
+        controlsForTrailer = new OrbitControls( cameraForTrailer, renderer.domElement );
+        controlsForTrailer.target.set( 0, 1, 0 );
+        controlsForTrailer.enablePan = false;
+        controlsForTrailer.update();
 
-		controlsForDrone.enabled = false;
-		controlsForTrailer.enabled = true;
+        // CAMERA 2
+        controlsForDrone = new FirstPersonControls( cameraForDrone, renderer.domElement );
+        controlsForDrone.lookAt( 0, 0, 0 );
 
-		// FUNCTION TO LOAD A SINGLE ROCK
-		myObjLoader();
+        controlsForDrone.movementSpeed = 50;
+        controlsForDrone.lookSpeed = 0.125;
+        controlsForDrone.lookVertical = true;
 
-		stats = new Stats();
-		document.body.appendChild( stats.dom );
+        controlsForDrone.enabled = false;
+        controlsForTrailer.enabled = true;
 
-		// BLOCK OF CODES TO PASS PIXEL SHADER
-		composer = new EffectComposer( renderer );
-		composer.outputEncoding = THREE.sRGBEncoding;
-		composer.addPass( new RenderPass( scene, cameraForDrone ) );
-		composer.removePass()
+        // FUNCTION TO LOAD A SINGLE ROCK
+        myObjLoader();
 
-		pixelPass = new ShaderPass( PixelShader );
-		pixelPass.uniforms[ 'resolution' ].value = new THREE.Vector2( window.innerWidth, window.innerHeight );
-		pixelPass.uniforms[ 'resolution' ].value.multiplyScalar( window.devicePixelRatio );
+        stats = new Stats();
+        document.body.appendChild( stats.dom );
 
-		// TODO JUST PLAY WITH THIS VALUE TO CHANGE THE PIXEL SIZE
-		pixelPass.uniforms[ 'pixelSize' ].value = 4;
-		composer.addPass( pixelPass );
+        // BLOCK OF CODES TO PASS PIXEL SHADER
+        composerPixelShaderTrailer = new EffectComposer( renderer );
+        composerPixelShaderDrone = new EffectComposer( renderer );
 
-		window.addEventListener( 'resize', onWindowResize );
-		document.addEventListener( 'keydown', onKeyDown );
+        composerPixelShaderTrailer.addPass( new RenderPass( scene, cameraForTrailer ) );
+        composerPixelShaderDrone.addPass( new RenderPass( scene, cameraForDrone ) );
 
-	}
+        pixelPass = new ShaderPass( PixelShader );
+        pixelPass.uniforms[ 'resolution' ].value = new THREE.Vector2( window.innerWidth, window.innerHeight );
+        pixelPass.uniforms[ 'resolution' ].value.multiplyScalar( window.devicePixelRatio );
 
-	const onProgress = function () {};
+        // TODO JUST PLAY WITH THIS VALUE TO CHANGE THE PIXEL SIZE
+        pixelPass.uniforms[ 'pixelSize' ].value = 4;
+        composerPixelShaderTrailer.addPass( pixelPass );
+        composerPixelShaderDrone.addPass( pixelPass );
 
-	const onError = function () {};
+        const gammaCorrectionPass = new ShaderPass( GammaCorrectionShader );
+        composerPixelShaderTrailer.addPass( gammaCorrectionPass );
+        composerPixelShaderDrone.addPass( gammaCorrectionPass );
 
-	// FUNCTION TO LOAD A SINGLE ROCK
-	function myObjLoader() {
+        window.addEventListener( 'resize', onWindowResize );
+        document.addEventListener( 'keydown', onKeyDown );
 
-		new MTLLoader( manager )
-			.setPath( './resources/' )
-			.load( 'RockHigh2.mtl', function ( materials ) {
+    }
 
-				materials.preload();
+    const onProgress = function () {};
 
-				new OBJLoader( manager )
-					.setMaterials( materials )
-					.setPath( './resources/' )
-					.load( 'RockHigh2.obj', function ( object ) {
+    const onError = function () {};
 
-						object.scale.set( 1, 1, 1 );
-						object.position.set( 0, 2, 0 );
-						scene.add( object );
+    // FUNCTION TO LOAD A SINGLE ROCK
+    function myObjLoader() {
 
-					}, onProgress, onError );
+        new MTLLoader( manager )
+            .setPath( './resources/' )
+            .load( 'RockHigh2.mtl', function ( materials ) {
 
-			} );
+                materials.preload();
 
-	}
+                new OBJLoader( manager )
+                    .setMaterials( materials )
+                    .setPath( './resources/' )
+                    .load( 'RockHigh2.obj', function ( object ) {
 
-	function onKeyDown( event ) {
+                        object.scale.set( 1, 1, 1 );
+                        object.position.set( 0, 2, 0 );
+                        scene.add( object );
 
-		switch ( event.keyCode ) {
+                    }, onProgress, onError );
 
-			case 49: // 1
-				activeCamera = cameraForTrailer;
-				controlsForDrone.enabled = false;
-				controlsForTrailer.enabled = true;
-				break;
+            } );
 
-			case 50: // 2
-				activeCamera = cameraForDrone;
-				controlsForTrailer.enabled = false;
-				controlsForDrone.enabled = true;
-				break;
+    }
 
-		}
+    function onKeyDown( event ) {
 
-	}
+        switch ( event.keyCode ) {
 
-	function onWindowResize() {
+            case 49: // 1 Trailer Camera
+                activeCamera = cameraForTrailer;
+                controlsForDrone.enabled = false;
+                controlsForTrailer.enabled = true;
+                cameraMode = 0;
+                break;
 
-		cameraForTrailer.aspect = window.innerWidth / window.innerHeight;
-		cameraForTrailer.updateProjectionMatrix();
+            case 50: // 2 Drone Camera
+                activeCamera = cameraForDrone;
+                controlsForTrailer.enabled = false;
+                controlsForDrone.enabled = true;
+                cameraMode = 1;
+                break;
 
-		cameraForDrone.aspect = window.innerWidth / window.innerHeight;
-		cameraForDrone.updateProjectionMatrix();
+            case 76: // L shader
+                renderMode = (renderMode + 1) % 2;
+                break;
+        }
 
-		renderer.setSize( window.innerWidth, window.innerHeight );
+    }
 
-		pixelPass.uniforms[ 'resolution' ].value.set( window.innerWidth, window.innerHeight ).multiplyScalar( window.devicePixelRatio );
+    function onWindowResize() {
 
-	}
+        cameraForTrailer.aspect = window.innerWidth / window.innerHeight;
+        cameraForTrailer.updateProjectionMatrix();
 
-	//
+        cameraForDrone.aspect = window.innerWidth / window.innerHeight;
+        cameraForDrone.updateProjectionMatrix();
 
-	function update() {
+        renderer.setSize( window.innerWidth, window.innerHeight );
 
-		controlsForTrailer.update();
-		controlsForDrone.update( clock.getDelta() );
+        pixelPass.uniforms[ 'resolution' ].value.set( window.innerWidth, window.innerHeight ).multiplyScalar( window.devicePixelRatio );
 
-	}
+    }
 
-	function animate() {
+    //
 
-		// COMMENT COMPOSER.RENDER() FOR DEFAULT VIEW, COMMENT RENDER FOR PIXEL VIEW
+    function update() {
+        cameraForTrailer.updateProjectionMatrix();
+        cameraForDrone.updateProjectionMatrix();
 
-		render();
+        controlsForTrailer.update();
+        controlsForDrone.update( clock.getDelta() );
 
-		stats.update();
+    }
 
-		requestAnimationFrame( animate );
+    function animate() {
 
-	}
+        // COMMENT COMPOSER.RENDER() FOR DEFAULT VIEW, COMMENT RENDER FOR PIXEL VIEW
 
-	function render() {
+        render();
 
-		cameraForTrailer.updateProjectionMatrix();
-		cameraForDrone.updateProjectionMatrix();
+        stats.update();
 
-		update();
+        requestAnimationFrame( animate );
 
-		composer.render( clock.getDelta() );
+    }
 
-		//renderer.clear();
-		//renderer.render( scene, activeCamera );
+    function render() {
 
-	}
+        update();
+
+        if ( renderMode === 0 ) {
+
+            renderer.clear();
+            renderer.render( scene, activeCamera );
+
+        } else if ( renderMode === 1 ) {
+
+            if (cameraMode === 0) {
+
+                composerPixelShaderTrailer.render( clock.getDelta() );
+
+            } else if (cameraMode === 1) {
+
+                composerPixelShaderDrone.render( clock.getDelta() );
+
+            }
+
+        }
+
+    }
 
 </script>
 
