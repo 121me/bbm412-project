@@ -16,6 +16,7 @@ import { TransformControls } from "./TransformControls.js";
 import { MTLLoader } from './MTLLoader.js';
 import { OBJLoader } from './OBJLoader.js';
 import { TGALoader } from './TGALoader.js';
+import { GLTFLoader } from "./GLTFLoader.js";
 
 // libraries to pass shaders
 import { EffectComposer } from './EffectComposer.js';
@@ -26,7 +27,13 @@ import { GammaCorrectionShader } from "./GammaCorrectionShader.js";
 
 import { GUI } from './lil-gui.module.min.js';
 
-import {Matrix} from "./Matrix.js"
+import * as SkeletonUtils from "./SkeletonUtils.js";
+
+import { Matrix } from "./Matrix.js"
+
+let gltfLoaded = 0;
+
+let groundGroup;
 
 let defaultShaderTrailer, defaultShaderDrone;
 let scene, renderer, stats, composerPixelShaderTrailer, composerPixelShaderDrone; // camera?
@@ -40,16 +47,21 @@ let pixelPass, gammaCorrectionPass;
 // let stone;
 
 const clock = new THREE.Clock();
-clock.stop();
+//clock.stop();
 
 const manager = new THREE.LoadingManager();
 // manager.addHandler( /\.dds$/i, new DDSLoader() );
 manager.addHandler( /\.tga$/i, new TGALoader() );
 
+let mixers = [];
+
 let controlsForDrone;
 let controlsForTrailer;
 let transformControlsDrone;
 let transformControlsTrailer;
+
+let spotLight;
+let spotLightHelper;
 
 let selectMode = false;
 
@@ -67,7 +79,7 @@ let INTERSECTED = undefined;
 const mouse = new THREE.Vector2();
 let raycaster = new THREE.Raycaster();
 
-const amount = 30;
+let amount = 30;
 const sizeOfSoil = 3;
 const offset = ( amount - 1 ) / 2;
 
@@ -76,33 +88,41 @@ const offset = ( amount - 1 ) / 2;
 const randomDirtColor = [
     0xff0000,
 
-    0xff5000,
+    0xff3000,
 
-    0xffa000,
+    0xff6000,
+
+    0xff9000,
+
+    0xffc000,
 
     0xffff00,
-    0xffff00,
-    0xffff00,
 
-    0xa0ff00,
-    0xa0ff00,
-    0xa0ff00,
+    0xc0ff00,
 
-    0x50ff00,
-    0x50ff00,
-    0x50ff00,
+    0x80ff00,
+
+    0x40ff00,
 
     0x00ff00,
-    0x00ff00,
-    0x00ff00,
-    0x00ff00,
-    0x00ff00
 ];
 
 function init() {
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color( 0x88ccee );
+
+    // FUNCTION TO LOAD A SINGLE STONE
+    myObjLoader('Stone', [ 0, 2, -6 ], [ 2, 2, 2 ], [0, 0, 0] );
+    myObjLoader('Stone', [ 0, 2, -3 ], [ 2, 2, 2 ], [0, 0, 0] );
+    myObjLoader('Stone', [ 0, 2, 0 ], [ 2, 2, 2 ], [0, 0, 0] );
+    myGltfLoader('ShovelMan', [ 10, 1, 10 ], [ 2, 2, 2 ], [ 0, 0, 0] );
+    myGltfLoader('PickaxeMan', [ -10, 1, -10 ], [ 2, 2, 2 ], [ 0, 0, 0] );
+
+    //myObjLoader('Flower4', [ 0, 2, 9 ], [ 2, 2, 2 ] );
+    //myObjLoader('Flower5', [ 3, 2, 3 ], [ 2, 2, 2 ] );
+    //myObjLoader('Flower6', [ 9, 2, 5 ], [ 2, 2, 2 ] );
+    //myObjLoader('Flower7', [ 4, 2, 5 ], [ 2, 2, 2 ] );
 
     // cameraForTrailer
     cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 200 );
@@ -130,14 +150,36 @@ function init() {
     dirLight.rotation.set( 0, 0, 0);
     scene.add( dirLight );
 
-    const spotLight = new THREE.SpotLight( 0xffffff, 0.9 );
-    spotLight.angle = Math.PI / 4;
-    spotLight.position.set( 0, 50, 0 );
-    spotLight.rotation.set( 1, 0, 0 );
-    scene.add( spotLight );
+    const spotlightDummyGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+    const spotlightDummyMaterial = new THREE.MeshStandardMaterial( { color: 0x000000 } );
+    const spotlightDummyMesh = new THREE.Mesh( spotlightDummyGeometry, spotlightDummyMaterial );
 
-    const spotLightHelper = new THREE.SpotLightHelper( spotLight );
+    spotlightDummyMesh.position.set( 0, 50, 0 );
+    spotlightDummyMesh.rotation.set( 0, 0, 0 );
+
+    scene.add( spotlightDummyMesh );
+
+    spotLight = new THREE.SpotLight( 0xffffff, 0.9 );
+    spotLight.angle = Math.PI / 4;
+    spotLight.position.set( 0, -0.6, 0 );
+    spotLight.target.position.set( 0, -1.6, 0 );
+
+    spotLight.penumbra = 0.1;
+    spotLight.distance = 2000;
+
+    spotLight.castShadow = true;
+    spotLight.shadow.mapSize.width = 512;
+    spotLight.shadow.mapSize.height = 512;
+    spotLight.shadow.camera.near = 10;
+    spotLight.shadow.camera.far = 200;
+    spotLight.shadow.focus = 1;
+
+    spotlightDummyMesh.add( spotLight );
+    spotlightDummyMesh.add( spotLight.target );
+
+    spotLightHelper = new THREE.SpotLightHelper( spotLight );
     scene.add( spotLightHelper );
+    objectsTRS.push( spotlightDummyMesh );
 
     const axesHelper = new THREE.AxesHelper( 10 );
     scene.add( axesHelper );
@@ -148,32 +190,13 @@ function init() {
     INTERSECTED = stoneMesh;
     scene.add( stoneMesh );
 
-    const planeGeometry = new THREE.PlaneGeometry( sizeOfSoil, sizeOfSoil );
-    const boxGeometry = new THREE.BoxGeometry( sizeOfSoil * amount, 3, sizeOfSoil * amount);
-
-    const lowerGroundObject = new THREE.Mesh( boxGeometry, new THREE.MeshPhongMaterial( { color: 0x904000} ) );
-    lowerGroundObject.position.y = -1.6;
-    scene.add( lowerGroundObject );
-
-    for ( let x = 0; x < amount; x ++ ) {
-
-        for ( let z = 0; z < amount; z ++ ) {
-
-            const object = new THREE.Mesh( planeGeometry,
-                new THREE.MeshPhongMaterial( {
-                    color: randomDirtColor[ Math.floor( Math.random() * randomDirtColor.length ) ]
-                } ) );
-
-            object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
-            object.rotation.x = Math.PI * 1.5;
-
-            scene.add( object );
-
-        }
-
-    }
+    createGround( amount );
 
     const algorithmButtons = {
+        'createGround' : function () {
+            createGround( amount );
+        },
+
         'runAlgorithm' : function () {
 
             console.log('pressed');
@@ -191,12 +214,12 @@ function init() {
 
     const spotLightButtons = {
         'light color': spotLight.color.getHex(),
-        intensity: spotLight.intensity,
-        distance: spotLight.distance,
-        angle: spotLight.angle,
-        penumbra: spotLight.penumbra,
-        decay: spotLight.decay,
-        focus: spotLight.shadow.focus
+        'intensity': spotLight.intensity,
+        'distance': spotLight.distance,
+        'angle': spotLight.angle,
+        'penumbra': spotLight.penumbra,
+        'decay': spotLight.decay,
+        'focus': spotLight.shadow.focus
     };
 
     let h;
@@ -207,8 +230,11 @@ function init() {
 
     h = gui.addFolder( 'Algorithm' );
 
+    h.add( algorithmButtons, 'createGround' ).name('create new ground')
     h.add( algorithmButtons, 'runAlgorithm' ).name('run / rerun');
-    h.add( algorithmButtons, 'amount', 10.0, 50.0, 2.0 ).name('map side length');
+    h.add( algorithmButtons, 'amount', 10.0, 50.0, 2.0 ).name('map side length').onChange( function ( val ) {
+        amount = val;
+    } );
     h.add( algorithmButtons, 'number of sets', 2.0, 50.0, 1.0 ).name('number of sets');
 
     h = gui.addFolder( 'Pixel Shader' );
@@ -246,15 +272,6 @@ function init() {
     scene.add(transformControlsDrone);
     transformControlsTrailer = new TransformControls( cameraForTrailer, renderer.domElement );
     scene.add(transformControlsTrailer);
-
-    // FUNCTION TO LOAD A SINGLE STONE
-    myObjLoader('stone', [ 0, 2, -6 ], [ 2, 2, 2 ] );
-    myObjLoader('stone', [ 0, 2, -3 ], [ 2, 2, 2 ] );
-    myObjLoader('stone', [ 0, 2, 0 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower4', [ 0, 2, 9 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower5', [ 3, 2, 3 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower6', [ 9, 2, 5 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower7', [ 4, 2, 5 ], [ 2, 2, 2 ] );
 
     stats = new Stats();
     document.body.appendChild( stats.dom );
@@ -296,15 +313,61 @@ function init() {
     document.addEventListener( 'keydown', onKeyDown );
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mousedown', onMouseDown);
 
 }
 
-const onProgress = function () {};
+function createGround ( sideLength ) {
 
-const onError = function () {};
+    scene.remove(groundGroup);
+
+    let matrix = new Matrix( sideLength );
+    let groundMatrix = matrix.createMatrix();
+    console.log(groundMatrix);
+
+    groundGroup = new THREE.Group();
+
+    const planeGeometry = new THREE.PlaneGeometry( sizeOfSoil, sizeOfSoil );
+    const boxGeometry = new THREE.BoxGeometry( sizeOfSoil * sideLength, 3, sizeOfSoil * sideLength);
+
+    const lowerGroundObject = new THREE.Mesh( boxGeometry, new THREE.MeshPhongMaterial( { color: 0x904000} ) );
+    lowerGroundObject.position.y = -1.6;
+
+    groundGroup.add( lowerGroundObject );
+
+    const offset = ( sideLength - 1 ) / 2;
+
+    for ( let x = 0; x < sideLength; x ++ ) {
+
+        for ( let z = 0; z < sideLength; z ++ ) {
+
+            const object = new THREE.Mesh( planeGeometry,
+                new THREE.MeshPhongMaterial( {
+                    color: randomDirtColor[groundMatrix[x * sideLength + z]._health - 1]
+                } ) );
+
+            object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
+            object.rotation.x = Math.PI * 1.5;
+
+            groundGroup.add( object );
+
+        }
+
+    }
+
+    scene.add( groundGroup );
+}
+
+function onProgress (xhr) {
+
+}
+
+function onError (error) {
+
+}
 
 // FUNCTION TO LOAD A SINGLE .OBJ source
-function myObjLoader(fileName, position, scale) {
+function myObjLoader(fileName, position, scale, rotation) {
 
     new MTLLoader( manager )
         .setPath( './resources/' )
@@ -317,8 +380,9 @@ function myObjLoader(fileName, position, scale) {
                 .setPath( './resources/' )
                 .load( fileName+'.obj', function ( object ) {
 
-                    object.scale.set( ...scale );
                     object.position.set( ...position );
+                    object.scale.set( ...scale );
+                    object.rotation.set( ...rotation );
                     objectsTRS.push(object);
                     scene.add( object );
 
@@ -326,33 +390,90 @@ function myObjLoader(fileName, position, scale) {
         } );
 }
 
-function onMouseUp ( event ) {
+function myGltfLoader(fileName, position, scale, rotation) {
+
+    const loader = new GLTFLoader();
+
+    loader.load( './resources/'+fileName+'.glb', function ( gltf ) {
+
+        const model = SkeletonUtils.clone( gltf.scene );
+
+        const mixer = new THREE.AnimationMixer( model );
+
+        mixer.clipAction( gltf.animations[ 0 ] ).play(); // working?
+
+        model.position.set( ...position );
+        model.scale.set( ...scale );
+        model.rotation.set( ...rotation );
+
+        mixers.push(mixer)
+
+        gltfLoaded += 1;
+
+        scene.add( model );
+
+    }, onProgress, onError );
+
+}
+
+function onMouseDown ( event ) {
+
     if ( selectMode ) {
 
         let transformControls;
+        let controls;
 
         if (cameraMode === 0) {
             transformControls = transformControlsTrailer;
+            controls = controlsForTrailer;
         } else if (cameraMode === 1) {
             transformControls = transformControlsDrone;
+            controls = controlsForDrone;
         }
 
+        /*
         if (cameraMode === 0) {
             raycaster.setFromCamera(mouse, cameraForTrailer);
         } else if (cameraMode === 1) {
             raycaster.setFromCamera(mouse, cameraForDrone);
+        }
+        */
+
+        const intersection = raycaster.intersectObjects(objectsTRS);
+
+        if ( INTERSECTED && event.button === 0) {
+            controls.enabled = !transformControls.dragging;
+        }
+
+    }
+
+}
+
+function onMouseUp ( event ) {
+
+    if ( selectMode ) {
+
+        let transformControls;
+        let controls;
+
+        if (cameraMode === 0) {
+            transformControls = transformControlsTrailer;
+            controls = controlsForTrailer;
+        } else if (cameraMode === 1) {
+            transformControls = transformControlsDrone;
+            controls = controlsForDrone;
         }
 
         const intersection = raycaster.intersectObjects(objectsTRS);
 
         if (intersection.length === 0 && event.button === 0) {
 
-            transformControls.detach(INTERSECTED);
-            INTERSECTED = undefined;
+            controls.enabled = true;
 
         }
 
     }
+
 }
 
 function onMouseMove ( event ) {
@@ -378,7 +499,7 @@ function onMouseMove ( event ) {
 
         const intersection = raycaster.intersectObjects(objectsTRS);
 
-        if (intersection.length > 0) {
+        if (intersection.length > 0 && !transformControls.dragging ) {
 
             if (INTERSECTED !== intersection[0].object) {
 
@@ -387,8 +508,6 @@ function onMouseMove ( event ) {
                 }
 
                 INTERSECTED = intersection[0].object;
-
-                console.log(INTERSECTED);
 
                 transformControls.attach(INTERSECTED);
 
@@ -406,29 +525,35 @@ function updateWithButtons() {
 
 function onKeyDown( event ) {
 
+    let transformControls;
+    let controls;
+
+    if ( cameraMode === 0 ) {
+        transformControls = transformControlsTrailer;
+        controls = controlsForTrailer;
+    } else if ( cameraMode === 1 ) {
+        transformControls = transformControlsDrone;
+        controls = controlsForDrone;
+    }
+
     switch ( event.keyCode ) {
 
         case 49: // 1 Trailer Camera
-            //if ( !selectMode ) {
-                clock.stop();
+            if ( !selectMode ) {
+                //clock.stop();
                 controlsForDrone.enabled = false;
                 controlsForTrailer.enabled = true;
                 cameraMode = 0;
-            //}
+            }
             break;
 
         case 50: // 2 Drone Camera
-            //if ( !selectMode ) {
+            if ( !selectMode ) {
                 clock.start();
                 controlsForTrailer.enabled = false;
                 controlsForDrone.enabled = true;
                 cameraMode = 1;
-            //}
-            break;
-
-        case 70: // F
-            let newMatrix = new Matrix(5);
-            newMatrix.mainFunction();
+            }
             break;
 
         case 72: // H s(h)ader
@@ -436,28 +561,35 @@ function onKeyDown( event ) {
             break;
 
         case 76: // L Se(l)ect
-            let transformControls;
-            let controls;
-
-            console.log("L")
-
-            if ( cameraMode === 0 ) {
-                transformControls = transformControlsTrailer;
-                controls = controlsForTrailer;
-            } else if ( cameraMode === 1 ) {
-                transformControls = transformControlsDrone;
-                controls = controlsForDrone;
-            }
 
             if ( selectMode ) {
                 transformControls.detach(INTERSECTED);
                 INTERSECTED = undefined;
-                //controls.enabled = true;
-            } else {
-                //controls.enabled = false;
             }
 
             selectMode = !selectMode;
+            break;
+
+        case 79: // O R(o)tate
+
+            if (selectMode) {
+                transformControls.setMode("rotate");
+            }
+            break;
+
+        case 84: // T (T)ransform
+
+            if (selectMode) {
+                transformControls.setMode("translate");
+            }
+            break;
+
+        case 69: // E Scal(e)
+
+            if (selectMode) {
+                transformControls.setMode("scale");
+            }
+            break;
 
     }
 
@@ -497,6 +629,8 @@ function update() {
 
     stats.update();
 
+    spotLightHelper.update();
+
 }
 
 function tween( stone ) {
@@ -510,44 +644,58 @@ function tween( stone ) {
 
 function animate() {
 
-    setTimeout( animate, 2000 );
+    if ( gltfLoaded === 2 ) {
+
+        console.log(gltfLoaded);
+        let delta = clock.getDelta();
+
+        for ( const mixer of mixers ) mixer.update( delta );
+
+    }
 
 }
 
 function render() {
 
-    update();
+    requestAnimationFrame( render );
 
-    if ( renderMode === 0 ) {
+    if ( gltfLoaded === 2 ) {
 
-        if ( cameraMode === 0 ) {
+        update();
 
-            defaultShaderTrailer.render(scene, cameraForTrailer);
+        animate();
 
-        } else if ( cameraMode === 1 ) {
+        if (renderMode === 0) {
 
-            defaultShaderDrone.render(scene, cameraForDrone);
+            if (cameraMode === 0) {
 
-        }
+                defaultShaderTrailer.render(scene, cameraForTrailer);
 
-    } else if ( renderMode === 1 ) {
+            } else if (cameraMode === 1) {
 
-        if ( cameraMode === 0 ) {
+                defaultShaderDrone.render(scene, cameraForDrone);
 
-            composerPixelShaderTrailer.render( clock.getDelta() );
+            }
 
-        } else if ( cameraMode === 1 ) {
+        } else if (renderMode === 1) {
 
-            composerPixelShaderDrone.render( clock.getDelta() );
+            if (cameraMode === 0) {
+
+                composerPixelShaderTrailer.render(clock.getDelta());
+
+            } else if (cameraMode === 1) {
+
+                composerPixelShaderDrone.render(clock.getDelta());
+
+            }
 
         }
 
     }
 
-    requestAnimationFrame( render );
 
 }
 
 init();
-animate();
+
 render();
