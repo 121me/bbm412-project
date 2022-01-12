@@ -11,9 +11,8 @@ const GammaCorrectionShader = {
 
 	},
 
-	vertexShader: /* glsl */`
-
-		varying vec2 vUv;
+	vertexShader: /* glsl3 */`
+		out vec2 vUv;
 
 		void main() {
 
@@ -22,15 +21,14 @@ const GammaCorrectionShader = {
 
 		}`,
 
-	fragmentShader: /* glsl */`
-
+	fragmentShader: /* glsl3 */`
 		uniform sampler2D tDiffuse;
 
-		varying vec2 vUv;
+		in vec2 vUv;
 
 		void main() {
 
-			vec4 tex = texture2D( tDiffuse, vUv );
+			vec4 tex = texture( tDiffuse, vUv );
 
 			gl_FragColor = LinearTosRGB( tex );
 
