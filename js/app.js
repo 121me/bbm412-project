@@ -23,6 +23,7 @@ import { EffectComposer } from './EffectComposer.js';
 import { RenderPass } from './RenderPass.js';
 import { ShaderPass } from './ShaderPass.js';
 import { PixelShader } from './PixelShader.js';
+import { SkyShader } from "./SkyShader.js";
 import { GammaCorrectionShader } from "./GammaCorrectionShader.js";
 
 import { GUI } from './lil-gui.module.min.js';
@@ -34,6 +35,22 @@ import { Matrix } from "./Matrix.js"
 let gltfLoaded = 0;
 
 let groundGroup;
+let ground2D = [];
+
+let firstMatrix;
+let finalMatrix;
+let finalSet;
+
+let finalArray;
+
+let pickaxeMan = undefined;
+let pickaxeTime = 0;
+
+let shovelMan = undefined;
+let shovelTime = 0;
+
+let nosToBeSelected = 10;
+let nos = 30;
 
 let defaultShaderTrailer, defaultShaderDrone;
 let scene, renderer, stats, composerPixelShaderTrailer, composerPixelShaderDrone; // camera?
@@ -42,7 +59,33 @@ let cameraForTrailer, cameraForDrone;
 
 let objectsTRS = [];
 
+let environmentalObjects = new THREE.Group();
+
 let pixelPass, gammaCorrectionPass;
+
+const objProbs = cumulativeProbs([0.3,      0.20,   0.05,    0.05,    0.05,    0.9,      0.9,      0.9,       0.4,        0.06,
+    0.06,       0.06,       0.06,     0.06,     0.06,       0.06,      0.2,     0.2]);
+const objNames = ["Stone", "Pine1", "Log1", "Log2", "Log3", "Grass1", "Grass2", "Grass3", "DeadTree", "Flower1",
+    "Flower2", "Flower3", "Flower4", "Flower5", "Flower6", "Flower7", "Tree1", "Tree2"];
+
+function cumulativeProbs(probs) {
+    let list = [];
+    let sum = 0;
+    for (let i = 0; i < probs.length; i++) {
+        sum += probs[i];
+        list.push(sum);
+    }
+    return list;
+}
+
+function nameFromProb(prob, probsList, namesList) {
+    for (let i = 0; i < probsList.length; i++) {
+        if (prob < probsList[i]) {
+            return namesList[i];
+        }
+    }
+    return probsList[probsList.length - 1]
+}
 
 // let stone;
 
@@ -83,6 +126,9 @@ let amount = 30;
 const sizeOfSoil = 3;
 const offset = ( amount - 1 ) / 2;
 
+let deltaTime = clock.getDelta();
+let sky;
+
 // const count = Math.pow( amount, 2 );
 
 const randomDirtColor = [
@@ -107,32 +153,36 @@ const randomDirtColor = [
     0x00ff00,
 ];
 
+
 function init() {
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color( 0x88ccee );
 
-    // FUNCTION TO LOAD A SINGLE STONE
-    myObjLoader('Stone', [ 0, 2, -6 ], [ 2, 2, 2 ], [0, 0, 0] );
-    myObjLoader('Stone', [ 0, 2, -3 ], [ 2, 2, 2 ], [0, 0, 0] );
-    myObjLoader('Stone', [ 0, 2, 0 ], [ 2, 2, 2 ], [0, 0, 0] );
-    myGltfLoader('ShovelMan', [ 10, 1, 10 ], [ 2, 2, 2 ], [ 0, 0, 0] );
-    myGltfLoader('PickaxeMan', [ -10, 1, -10 ], [ 2, 2, 2 ], [ 0, 0, 0] );
+    let skyGeometry = new THREE.SphereBufferGeometry( 300, 32, 15 );
+    let skyMaterial = new THREE.ShaderMaterial( {
+        uniforms: SkyShader.uniforms,
+        vertexShader: SkyShader.vertexShader,
+        fragmentShader: SkyShader.fragmentShader,
+        side: THREE.BackSide,
+    } );
 
-    //myObjLoader('Flower4', [ 0, 2, 9 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower5', [ 3, 2, 3 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower6', [ 9, 2, 5 ], [ 2, 2, 2 ] );
-    //myObjLoader('Flower7', [ 4, 2, 5 ], [ 2, 2, 2 ] );
+    sky = new THREE.Mesh( skyGeometry, skyMaterial );
+    scene.add( sky );
+
+    myObjLoader('Drone', [ 0, 1, 0 ], [ 1, 1, 1 ], [ 0, 0, 0] );
+    myGltfLoader('ShovelMan', [ 10, 1, 10 ], [ 1, 1, 1 ], [ 0, 0, 0] );
+    myGltfLoader('PickaxeMan', [ -10, 1, -10 ], [ 1, 1, 1 ], [ 0, 0, 0] );
 
     // cameraForTrailer
-    cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 200 );
+    cameraForTrailer = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 3000 );
     cameraForTrailer.position.set( amount * 0.5 * sizeOfSoil, amount * 0.5 * sizeOfSoil, amount * 0.5 * sizeOfSoil );
     cameraForTrailer.lookAt( 0, 0, 0 );
     // scene.add( cameraForTrailer );
 
     // cameraForDrone
-    cameraForDrone = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 200 );
-    cameraForDrone.position.set( 0, amount * 0.5 * sizeOfSoil, 0 );
+    cameraForDrone = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 3000 );
+    cameraForDrone.position.set( 0, 10, 0 );
     cameraForDrone.lookAt( 0, 0, 0 );
     // scene.add( cameraForDrone );
 
@@ -199,27 +249,23 @@ function init() {
 
         'runAlgorithm' : function () {
 
-            console.log('pressed');
+            tween();
 
         },
 
         'amount' : amount,
 
-        'number of sets' : 10,
+        'number of sets (nos)' : 30,
+
+        'nos to be selected' : 10,
     };
 
     const pixelShaderButtons = {
-        'size' : 4,
+        'size' : 1.0,
     };
 
     const spotLightButtons = {
-        'light color': spotLight.color.getHex(),
-        'intensity': spotLight.intensity,
-        'distance': spotLight.distance,
-        'angle': spotLight.angle,
-        'penumbra': spotLight.penumbra,
-        'decay': spotLight.decay,
-        'focus': spotLight.shadow.focus
+        'onOrOff': true,
     };
 
     let h;
@@ -235,13 +281,24 @@ function init() {
     h.add( algorithmButtons, 'amount', 10.0, 50.0, 2.0 ).name('map side length').onChange( function ( val ) {
         amount = val;
     } );
-    h.add( algorithmButtons, 'number of sets', 2.0, 50.0, 1.0 ).name('number of sets');
+    h.add( algorithmButtons, 'number of sets (nos)', 2.0, 50.0, 1.0 ).name('number of sets (nos)').onChange( function (val) {
+        nos = val;
+    } );
+    h.add( algorithmButtons, 'nos to be selected', 2.0, 50.0, 1.0 ).name('nos to be selected').onChange( function (val) {
+        nosToBeSelected = val;
+    } );
 
     h = gui.addFolder( 'Pixel Shader' );
 
-    h.add( pixelShaderButtons, 'size', 1.0, 20.0, 1.0);
+    h.add( pixelShaderButtons, 'size', 0.0, 4.0, 0.05).onChange( function (val) {
+        pixelPass.uniforms[ 'intensity' ].value = val;
+    } );
 
     h = gui.addFolder( 'Spot Light' );
+
+    h.add( spotLightButtons, 'onOrOff' ).name('switch').onChange( function (val) {
+        spotLight.visible = val;
+    } );
 
     // MAIN RENDERER
     renderer = new THREE.WebGLRenderer( { antialias: true } );
@@ -256,7 +313,7 @@ function init() {
 
     // CAMERA 2
     controlsForDrone = new FirstPersonControls( cameraForDrone, renderer.domElement );
-    controlsForDrone.lookAt( 0, 0, 0 );
+    controlsForDrone.lookAt( 30, 0, 30 );
 
     controlsForDrone.movementSpeed = 20;
     controlsForDrone.lookSpeed = 0.05;
@@ -290,12 +347,12 @@ function init() {
     composerPixelShaderTrailer.addPass( new RenderPass( scene, cameraForTrailer ) );
     composerPixelShaderDrone.addPass( new RenderPass( scene, cameraForDrone ) );
 
+
     pixelPass = new ShaderPass( PixelShader );
     pixelPass.uniforms[ 'resolution' ].value = new THREE.Vector2( window.innerWidth, window.innerHeight );
     pixelPass.uniforms[ 'resolution' ].value.multiplyScalar( window.devicePixelRatio );
-
     // TODO JUST PLAY WITH THIS VALUE TO CHANGE THE PIXEL SIZE
-    //pixelPass.uniforms[ 'pixelSize' ].value = 4;
+    pixelPass.uniforms[ 'intensity' ].value = 1.0;
     composerPixelShaderTrailer.addPass( pixelPass );
     composerPixelShaderDrone.addPass( pixelPass );
 
@@ -317,15 +374,37 @@ function init() {
 
 }
 
+function randomObjLoader() {
+    for (let i = -amount * sizeOfSoil/2 + 1; i < amount * sizeOfSoil/2; i+= sizeOfSoil) {
+        for (let j = -amount * sizeOfSoil / 2 + 1; j < amount * sizeOfSoil / 2; j+= sizeOfSoil) {
+            if (Math.random() >= 0.8) {
+                let randomScale = Math.random() / 4;
+                let probability = Math.random() * objProbs[objProbs.length - 1];
+                let name = nameFromProb(probability, objProbs, objNames);
+                myObjLoader(name, [ i + 0.5, 0.0, j + 0.5 ], [ 1 + randomScale, 1 + randomScale, 1 + randomScale ], [ 0, Math.random() * 360, 0] );
+
+            }
+        }
+    }
+}
+
+
 function createGround ( sideLength ) {
 
     scene.remove(groundGroup);
+    scene.remove(environmentalObjects);
 
-    let matrix = new Matrix( sideLength );
-    let groundMatrix = matrix.createMatrix();
-    console.log(groundMatrix);
+    randomObjLoader();
+
+    let matrix = new Matrix( sideLength, nos, nosToBeSelected);
+    let output = matrix.mainFunction();
+
+    firstMatrix = output[0];
+    finalMatrix = output[1];
+    finalSet = output[2];
 
     groundGroup = new THREE.Group();
+    environmentalObjects = new THREE.Group();
 
     const planeGeometry = new THREE.PlaneGeometry( sizeOfSoil, sizeOfSoil );
     const boxGeometry = new THREE.BoxGeometry( sizeOfSoil * sideLength, 3, sizeOfSoil * sideLength);
@@ -335,27 +414,38 @@ function createGround ( sideLength ) {
 
     groundGroup.add( lowerGroundObject );
 
+    ground2D = []
+
+    let line;
+
     const offset = ( sideLength - 1 ) / 2;
 
     for ( let x = 0; x < sideLength; x ++ ) {
+
+        line = [];
 
         for ( let z = 0; z < sideLength; z ++ ) {
 
             const object = new THREE.Mesh( planeGeometry,
                 new THREE.MeshPhongMaterial( {
-                    color: randomDirtColor[groundMatrix[x * sideLength + z]._health - 1]
+                    color: randomDirtColor[firstMatrix[x * sideLength + z]._health - 1]
                 } ) );
 
             object.position.set( ( offset - x ) * sizeOfSoil, 0, ( offset - z ) * sizeOfSoil );
             object.rotation.x = Math.PI * 1.5;
 
+            line.push( object );
+
             groundGroup.add( object );
 
         }
 
+        ground2D.push(line);
+
     }
 
     scene.add( groundGroup );
+    scene.add( environmentalObjects );
 }
 
 function onProgress (xhr) {
@@ -383,8 +473,13 @@ function myObjLoader(fileName, position, scale, rotation) {
                     object.position.set( ...position );
                     object.scale.set( ...scale );
                     object.rotation.set( ...rotation );
-                    objectsTRS.push(object);
-                    scene.add( object );
+
+                    if (fileName === 'Drone') {
+                        cameraForDrone.add(object);
+                    } else {
+                        environmentalObjects.add(object);
+                        objectsTRS.push(object);
+                    }
 
                 }, onProgress, onError );
         } );
@@ -409,6 +504,12 @@ function myGltfLoader(fileName, position, scale, rotation) {
         mixers.push(mixer)
 
         gltfLoaded += 1;
+
+        if (fileName === 'PickaxeMan') {
+            pickaxeMan = model;
+        } else if (fileName === 'ShovelMan') {
+            shovelMan = model;
+        }
 
         scene.add( model );
 
@@ -519,10 +620,6 @@ function onMouseMove ( event ) {
 
 }
 
-function updateWithButtons() {
-    // TODO ADD TO .ONCHANGE()
-}
-
 function onKeyDown( event ) {
 
     let transformControls;
@@ -560,6 +657,10 @@ function onKeyDown( event ) {
             renderMode = (renderMode + 1) % 2;
             break;
 
+        case 75: // K s(k)y
+            sky.visible = !sky.visible;
+            break;
+
         case 76: // L Se(l)ect
 
             if ( selectMode ) {
@@ -577,7 +678,7 @@ function onKeyDown( event ) {
             }
             break;
 
-        case 84: // T (T)ransform
+        case 84: // T (T)ranslate
 
             if (selectMode) {
                 transformControls.setMode("translate");
@@ -621,7 +722,7 @@ function update() {
     } else if (cameraMode === 1) {
 
         cameraForDrone.updateProjectionMatrix();
-        controlsForDrone.update( clock.getDelta() );
+        controlsForDrone.update( deltaTime );
 
     }
 
@@ -633,23 +734,25 @@ function update() {
 
 }
 
-function tween( stone ) {
-    new TWEEN.Tween( stone.position ).to( {
-        x: ( offset - Math.random() * amount ),
-        y: 2,
-        z: ( offset - Math.random() * amount )
-    }, Math.random() * 1000 + 1000 )
-        .easing( TWEEN.Easing.Quadratic.Out ).start();
+function tween() {
+
+    for ( let cell of finalSet ) {
+        new TWEEN.Tween(ground2D[cell.y][cell.x].material.color).to(
+            {
+                r: 0,
+                g: 1,
+                b: 0,
+            }, Math.random() * 3000 + 1000 )
+            .easing( TWEEN.Easing.Quadratic.Out ).start();
+    }
+
 }
 
 function animate() {
 
     if ( gltfLoaded === 2 ) {
 
-        console.log(gltfLoaded);
-        let delta = clock.getDelta();
-
-        for ( const mixer of mixers ) mixer.update( delta );
+        for ( const mixer of mixers ) mixer.update( deltaTime );
 
     }
 
@@ -658,6 +761,8 @@ function animate() {
 function render() {
 
     requestAnimationFrame( render );
+
+    deltaTime = clock.getDelta();
 
     if ( gltfLoaded === 2 ) {
 
@@ -681,18 +786,17 @@ function render() {
 
             if (cameraMode === 0) {
 
-                composerPixelShaderTrailer.render(clock.getDelta());
+                composerPixelShaderTrailer.render(deltaTime);
 
             } else if (cameraMode === 1) {
 
-                composerPixelShaderDrone.render(clock.getDelta());
+                composerPixelShaderDrone.render(deltaTime);
 
             }
 
         }
 
     }
-
 
 }
 

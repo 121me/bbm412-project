@@ -13,7 +13,7 @@ const PixelShader = {
 	},
 
 	vertexShader: /* glsl3 */`
-		varying vec2 vUv;
+		out vec2 vUv;
         void main() {
             vUv = uv;
             gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
@@ -28,7 +28,7 @@ const PixelShader = {
            return texture(tDiffuse, uv).rgb;
         }
         vec3 effect(vec2 uv, vec3 col) {
-           float granularity = intensity * 5.0;
+           float granularity = intensity * 2.0;
            if(mod(granularity,2.0) > 0.0) {
                granularity += 1.0;
            };
