@@ -671,6 +671,10 @@ function onKeyDown( event ) {
             selectMode = !selectMode;
             break;
 
+        case 78: // Intensity
+            spotLight.intensity = (spotLight.intensity + 0.5) % 2;
+            break;
+
         case 79: // O R(o)tate
 
             if (selectMode) {
